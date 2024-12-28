@@ -7,23 +7,32 @@ interface SquareProps {
 }
 
 export default function Square({ isLight, piece, position }: SquareProps) {
+  const getPieceLetterCode = (type: string) => {
+    switch (type) {
+      case "knight":
+        return "N";
+      default:
+        return type.charAt(0).toUpperCase();
+    }
+  };
+
   return (
     <div
       className={`w-full aspect-square flex items-center justify-center
         ${isLight ? "bg-[#f0d9b5]" : "bg-[#b58863]"}`}
     >
       {piece && (
-        <div className="text-2xl">
-          {/* Temporary representation of pieces using letters */}
-          {getPieceSymbol(piece)}
+        <div className="w-full h-full p-1">
+          <img
+            src={`/pieces/${piece.color.charAt(0)}${getPieceLetterCode(
+              piece.type
+            )}.svg`}
+            alt={`${piece.color} ${piece.type}`}
+            className="w-full h-full"
+            draggable={false}
+          />
         </div>
       )}
     </div>
   );
-}
-
-// Helper function to show piece symbols (temporary until we add images)
-function getPieceSymbol(piece: Piece): string {
-  const symbol = piece.type.charAt(0).toUpperCase();
-  return piece.color === "black" ? `B${symbol}` : `W${symbol}`;
 }
