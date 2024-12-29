@@ -21,6 +21,8 @@ export default function Square({
     switch (type) {
       case "knight":
         return "N";
+      case "pawn":
+        return "P";
       default:
         return type.charAt(0).toUpperCase();
     }
