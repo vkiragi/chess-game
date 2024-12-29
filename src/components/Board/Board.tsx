@@ -13,7 +13,7 @@ export default function Board() {
     null
   );
   const [possibleMoves, setPossibleMoves] = useState<Position[]>([]);
-  const [currentPlayer, setCurrentPlayer] = useState<PieceColor>("white");
+  const [currentPlayer] = useState<PieceColor>("white");
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -46,14 +46,132 @@ export default function Board() {
         return moves;
       }
 
-      case "rook":
-        // Existing rook logic
-        return [
-          { x: position.x + 1, y: position.y },
-          { x: position.x - 1, y: position.y },
-          { x: position.x, y: position.y + 1 },
-          { x: position.x, y: position.y - 1 },
-        ].filter((pos) => pos.x >= 0 && pos.x < 8 && pos.y >= 0 && pos.y < 8);
+      case "rook": {
+        const moves: Position[] = [];
+        const directions = [
+          [0, 1],
+          [1, 0],
+          [0, -1],
+          [-1, 0],
+        ]; // up, right, down, left
+
+        for (const [dx, dy] of directions) {
+          let x = position.x + dx;
+          let y = position.y + dy;
+
+          while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+            if (board[y][x]) break; // Stop at first piece encountered
+            moves.push({ x, y });
+            x += dx;
+            y += dy;
+          }
+        }
+        return moves;
+      }
+
+      case "knight": {
+        const knightMoves = [
+          [-2, -1],
+          [-2, 1],
+          [-1, -2],
+          [-1, 2],
+          [1, -2],
+          [1, 2],
+          [2, -1],
+          [2, 1],
+        ];
+
+        return knightMoves
+          .map(([dx, dy]) => ({
+            x: position.x + dx,
+            y: position.y + dy,
+          }))
+          .filter(
+            (pos) =>
+              pos.x >= 0 &&
+              pos.x < 8 &&
+              pos.y >= 0 &&
+              pos.y < 8 &&
+              !board[pos.y][pos.x]
+          );
+      }
+
+      case "bishop": {
+        const moves: Position[] = [];
+        const directions = [
+          [1, 1],
+          [1, -1],
+          [-1, 1],
+          [-1, -1],
+        ];
+
+        for (const [dx, dy] of directions) {
+          let x = position.x + dx;
+          let y = position.y + dy;
+
+          while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+            if (board[y][x]) break;
+            moves.push({ x, y });
+            x += dx;
+            y += dy;
+          }
+        }
+        return moves;
+      }
+
+      case "queen": {
+        const moves: Position[] = [];
+        const directions = [
+          [0, 1],
+          [1, 0],
+          [0, -1],
+          [-1, 0],
+          [1, 1],
+          [1, -1],
+          [-1, 1],
+          [-1, -1],
+        ];
+
+        for (const [dx, dy] of directions) {
+          let x = position.x + dx;
+          let y = position.y + dy;
+
+          while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+            if (board[y][x]) break;
+            moves.push({ x, y });
+            x += dx;
+            y += dy;
+          }
+        }
+        return moves;
+      }
+
+      case "king": {
+        const kingMoves = [
+          [-1, -1],
+          [-1, 0],
+          [-1, 1],
+          [0, -1],
+          [0, 1],
+          [1, -1],
+          [1, 0],
+          [1, 1],
+        ];
+
+        return kingMoves
+          .map(([dx, dy]) => ({
+            x: position.x + dx,
+            y: position.y + dy,
+          }))
+          .filter(
+            (pos) =>
+              pos.x >= 0 &&
+              pos.x < 8 &&
+              pos.y >= 0 &&
+              pos.y < 8 &&
+              !board[pos.y][pos.x]
+          );
+      }
 
       default:
         return [];
@@ -63,25 +181,22 @@ export default function Board() {
   const handleSquareClick = (position: Position) => {
     const piece = board[position.y][position.x];
 
-    if (!selectedPosition && piece?.color === currentPlayer) {
+    if (!selectedPosition && piece?.color === "white") {
       setSelectedPosition(position);
       setPossibleMoves(calculatePossibleMoves(position));
       return;
     }
 
     if (selectedPosition) {
-      // Handle move if clicked position is in possibleMoves
       const isValidMove = possibleMoves.some(
         (move) => move.x === position.x && move.y === position.y
       );
 
       if (isValidMove) {
-        // Create new board state
         const newBoard = board.map((row) => [...row]);
         const movingPiece = board[selectedPosition.y][selectedPosition.x];
 
         if (movingPiece) {
-          // Update piece position
           newBoard[selectedPosition.y][selectedPosition.x] = null;
           newBoard[position.y][position.x] = {
             ...movingPiece,
@@ -90,11 +205,9 @@ export default function Board() {
           };
 
           setBoard(newBoard);
-          setCurrentPlayer(currentPlayer === "white" ? "black" : "white");
         }
       }
 
-      // Reset selection
       setSelectedPosition(null);
       setPossibleMoves([]);
     }
