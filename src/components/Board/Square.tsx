@@ -4,9 +4,19 @@ interface SquareProps {
   isLight: boolean;
   piece: Piece | null;
   position: Position;
+  isSelected?: boolean;
+  isPossibleMove?: boolean;
+  onClick?: () => void;
 }
 
-export default function Square({ isLight, piece, position }: SquareProps) {
+export default function Square({
+  isLight,
+  piece,
+  position,
+  isSelected,
+  isPossibleMove,
+  onClick,
+}: SquareProps) {
   const getPieceLetterCode = (type: string) => {
     switch (type) {
       case "knight":
@@ -18,9 +28,15 @@ export default function Square({ isLight, piece, position }: SquareProps) {
 
   return (
     <div
-      className={`w-full aspect-square flex items-center justify-center
-        ${isLight ? "bg-[#f0d9b5]" : "bg-[#b58863]"}`}
+      onClick={onClick}
+      className={`w-full aspect-square flex items-center justify-center cursor-pointer relative
+        ${isLight ? "bg-[#f0d9b5]" : "bg-[#b58863]"}
+        ${isSelected ? "bg-[#f7c063] bg-opacity-50" : ""}
+        hover:opacity-90 transition-colors duration-200`}
     >
+      {isPossibleMove && (
+        <div className="absolute w-4 h-4 rounded-full bg-black/30" />
+      )}
       {piece && (
         <div className="w-full h-full p-1">
           <img
