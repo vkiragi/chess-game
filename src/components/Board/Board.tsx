@@ -63,6 +63,9 @@ export default function Board() {
     const piece = boardState[position.y][position.x];
     if (!piece) return [];
 
+    // Add a parameter to prevent infinite recursion
+    const isKingMove = piece.type === "king" && !checkingAttack;
+
     // Helper function to check if a position contains an enemy piece
     const isEnemyPiece = (x: number, y: number) => {
       const targetPiece = boardState[y][x];
@@ -304,8 +307,39 @@ export default function Board() {
               (!boardState[pos.y][pos.x] || isEnemyPiece(pos.x, pos.y))
           );
 
-        const castlingMoves = getCastlingMoves(position);
-        return [...normalMoves, ...castlingMoves];
+        // Only check for safe moves if this is an actual king move, not an attack check
+        if (isKingMove) {
+          const safeMoves = normalMoves.filter((pos) => {
+            const simulatedBoard = boardState.map((row) => [...row]);
+            simulatedBoard[position.y][position.x] = null;
+            simulatedBoard[pos.y][pos.x] = piece;
+
+            // Check if any enemy piece can attack this position
+            for (let y = 0; y < 8; y++) {
+              for (let x = 0; x < 8; x++) {
+                const attackingPiece = simulatedBoard[y][x];
+                if (attackingPiece && attackingPiece.color !== piece.color) {
+                  const moves = calculatePossibleMoves(
+                    { x, y },
+                    true,
+                    simulatedBoard
+                  );
+                  if (
+                    moves.some((move) => move.x === pos.x && move.y === pos.y)
+                  ) {
+                    return false;
+                  }
+                }
+              }
+            }
+            return true;
+          });
+
+          const castlingMoves = getCastlingMoves(position);
+          return [...safeMoves, ...castlingMoves];
+        }
+
+        return normalMoves;
       }
 
       default:
