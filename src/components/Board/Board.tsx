@@ -4,8 +4,7 @@ import { useState } from "react";
 import Square from "./Square";
 import { initialPosition } from "@/app/lib/constants/initialPosition";
 import styles from "./styles.module.css";
-import { Position } from "@/app/lib/types/piece";
-import { PieceColor, PieceType } from "@/app/lib/types/piece";
+import { Position, Piece, PieceColor, PieceType } from "@/app/lib/types/piece";
 
 export default function Board() {
   const [board, setBoard] = useState(initialPosition);
@@ -21,6 +20,7 @@ export default function Board() {
     winner: PieceColor | null;
     reason: string;
   } | null>(null);
+  const [moveHistory, setMoveHistory] = useState<string[]>([]);
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -453,6 +453,16 @@ export default function Board() {
           }
 
           setCurrentPlayer(currentPlayer === "white" ? "black" : "white");
+
+          const isCapture = board[position.y][position.x] !== null;
+          const moveNotation = toAlgebraicNotation(
+            selectedPosition,
+            position,
+            movingPiece,
+            isCapture,
+            board
+          );
+          setMoveHistory((prev) => [...prev, moveNotation]);
         }
       }
 
@@ -514,6 +524,58 @@ export default function Board() {
               </span>
             )}
           </p>
+        </div>
+      </div>
+    );
+  };
+
+  const toAlgebraicNotation = (
+    from: Position,
+    to: Position,
+    piece: Piece,
+    isCapture: boolean,
+    board: (Piece | null)[][]
+  ): string => {
+    const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
+
+    if (piece.type === "king" && Math.abs(from.x - to.x) === 2) {
+      return to.x > from.x ? "O-O" : "O-O-O";
+    }
+
+    const pieceSymbol =
+      piece.type === "pawn"
+        ? ""
+        : piece.type === "knight"
+        ? "N"
+        : piece.type.charAt(0).toUpperCase();
+    const captureNotation = isCapture ? "x" : "";
+    const fromFile = piece.type === "pawn" && isCapture ? files[from.x] : "";
+    const destination = `${files[to.x]}${ranks[to.y]}`;
+
+    return `${pieceSymbol}${fromFile}${captureNotation}${destination}`;
+  };
+
+  const renderMoveHistory = () => {
+    return (
+      <div className="absolute top-[-32px] -right-80 w-64 h-[664px] bg-gray-800/50 shadow-xl rounded-lg overflow-y-auto backdrop-blur-sm">
+        <div className="sticky top-0 z-10 bg-gray-800/50 backdrop-blur-sm px-8 py-6 border-b border-gray-700">
+          <h2 className="text-2xl font-bold text-white">Move History</h2>
+        </div>
+        <div className="px-8 py-6 space-y-3">
+          {Array.from({ length: Math.ceil(moveHistory.length / 2) }, (_, i) => (
+            <div key={i} className="flex items-center">
+              <span className="w-8 text-gray-400 font-mono">{i + 1}.</span>
+              <div className="flex-1 flex gap-4">
+                <span className="w-20 text-white font-medium">
+                  {moveHistory[i * 2] || ""}
+                </span>
+                <span className="w-20 text-gray-300">
+                  {moveHistory[i * 2 + 1] || ""}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -590,6 +652,8 @@ export default function Board() {
       )}
 
       {renderGameStatus()}
+
+      {renderMoveHistory()}
     </div>
   );
 }
