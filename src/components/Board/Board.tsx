@@ -13,46 +13,105 @@ export default function Board() {
     null
   );
   const [possibleMoves, setPossibleMoves] = useState<Position[]>([]);
-  const [currentPlayer] = useState<PieceColor>("white");
+  const [currentPlayer, setCurrentPlayer] = useState<PieceColor>("white");
   const [promotionSquare, setPromotionSquare] = useState<Position | null>(null);
+  const [kingInCheck, setKingInCheck] = useState<Position | null>(null);
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
 
-  const calculatePossibleMoves = (position: Position): Position[] => {
-    const piece = board[position.y][position.x];
+  // Helper function to check if a square is under attack by the opponent
+  const isSquareUnderAttack = (
+    position: Position,
+    color: PieceColor,
+    boardState = board
+  ): boolean => {
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const piece = boardState[y][x];
+        if (piece && piece.color !== color) {
+          const moves = calculatePossibleMoves({ x, y }, true, boardState);
+          if (
+            moves.some((move) => move.x === position.x && move.y === position.y)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  // Helper function to find the king's position
+  const findKing = (color: PieceColor): Position | null => {
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const piece = board[y][x];
+        if (piece?.type === "king" && piece.color === color) {
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  };
+
+  const calculatePossibleMoves = (
+    position: Position,
+    checkingAttack: boolean = false,
+    boardState = board
+  ): Position[] => {
+    const piece = boardState[position.y][position.x];
     if (!piece) return [];
 
     // Helper function to check if a position contains an enemy piece
     const isEnemyPiece = (x: number, y: number) => {
-      const targetPiece = board[y][x];
+      const targetPiece = boardState[y][x];
       return targetPiece && targetPiece.color !== piece.color;
     };
 
     // Helper function to check if a square is empty
     const isEmpty = (x: number, y: number) => {
-      return !board[y][x];
+      return !boardState[y][x];
     };
 
-    // Helper function to check castling possibility
+    // Modified castling check to include check detection
     const getCastlingMoves = (kingPosition: Position): Position[] => {
       if (piece.hasMoved) return [];
+
+      // Don't calculate castling moves when checking for attacks
+      if (checkingAttack) return [];
+
+      // Can't castle out of check
+      if (isSquareUnderAttack(kingPosition, piece.color)) return [];
+
       const castlingMoves: Position[] = [];
       const y = kingPosition.y;
 
       // Kingside castling
-      const kingsideRook = board[y][7];
+      const kingsideRook = boardState[y][7];
       if (kingsideRook?.type === "rook" && !kingsideRook.hasMoved) {
         if (isEmpty(5, y) && isEmpty(6, y)) {
-          castlingMoves.push({ x: 6, y });
+          // Check if passing squares are safe
+          if (
+            !isSquareUnderAttack({ x: 5, y }, piece.color) &&
+            !isSquareUnderAttack({ x: 6, y }, piece.color)
+          ) {
+            castlingMoves.push({ x: 6, y });
+          }
         }
       }
 
       // Queenside castling
-      const queensideRook = board[y][0];
+      const queensideRook = boardState[y][0];
       if (queensideRook?.type === "rook" && !queensideRook.hasMoved) {
         if (isEmpty(1, y) && isEmpty(2, y) && isEmpty(3, y)) {
-          castlingMoves.push({ x: 2, y });
+          // Check if passing squares are safe
+          if (
+            !isSquareUnderAttack({ x: 2, y }, piece.color) &&
+            !isSquareUnderAttack({ x: 3, y }, piece.color)
+          ) {
+            castlingMoves.push({ x: 2, y });
+          }
         }
       }
 
@@ -66,16 +125,23 @@ export default function Board() {
 
         // Forward moves
         const oneStep = { x: position.x, y: position.y + direction };
-        if (oneStep.y >= 0 && oneStep.y < 8 && !board[oneStep.y][oneStep.x]) {
+        if (
+          oneStep.y >= 0 &&
+          oneStep.y < 8 &&
+          !boardState[oneStep.y][oneStep.x]
+        ) {
           moves.push(oneStep);
 
           // Initial two square move
           const isInitialPosition =
             (piece.color === "white" && position.y === 6) ||
             (piece.color === "black" && position.y === 1);
-          if (isInitialPosition) {
+          if (
+            isInitialPosition &&
+            !boardState[position.y + direction][position.x]
+          ) {
             const twoStep = { x: position.x, y: position.y + direction * 2 };
-            if (!board[twoStep.y][twoStep.x]) {
+            if (!boardState[twoStep.y][twoStep.x]) {
               moves.push(twoStep);
             }
           }
@@ -89,7 +155,8 @@ export default function Board() {
 
         captureMoves.forEach((move) => {
           if (move.x >= 0 && move.x < 8 && move.y >= 0 && move.y < 8) {
-            if (isEnemyPiece(move.x, move.y)) {
+            // When checking for attacks, include diagonal moves even if no enemy piece
+            if (checkingAttack || isEnemyPiece(move.x, move.y)) {
               moves.push(move);
             }
           }
@@ -112,7 +179,7 @@ export default function Board() {
           let y = position.y + dy;
 
           while (x >= 0 && x < 8 && y >= 0 && y < 8) {
-            if (board[y][x]) {
+            if (boardState[y][x]) {
               if (isEnemyPiece(x, y)) {
                 moves.push({ x, y });
               }
@@ -149,7 +216,7 @@ export default function Board() {
               pos.x < 8 &&
               pos.y >= 0 &&
               pos.y < 8 &&
-              (!board[pos.y][pos.x] || isEnemyPiece(pos.x, pos.y))
+              (!boardState[pos.y][pos.x] || isEnemyPiece(pos.x, pos.y))
           );
       }
 
@@ -167,7 +234,7 @@ export default function Board() {
           let y = position.y + dy;
 
           while (x >= 0 && x < 8 && y >= 0 && y < 8) {
-            if (board[y][x]) {
+            if (boardState[y][x]) {
               if (isEnemyPiece(x, y)) {
                 moves.push({ x, y });
               }
@@ -199,7 +266,7 @@ export default function Board() {
           let y = position.y + dy;
 
           while (x >= 0 && x < 8 && y >= 0 && y < 8) {
-            if (board[y][x]) {
+            if (boardState[y][x]) {
               if (isEnemyPiece(x, y)) {
                 moves.push({ x, y });
               }
@@ -234,7 +301,7 @@ export default function Board() {
               pos.x < 8 &&
               pos.y >= 0 &&
               pos.y < 8 &&
-              (!board[pos.y][pos.x] || isEnemyPiece(pos.x, pos.y))
+              (!boardState[pos.y][pos.x] || isEnemyPiece(pos.x, pos.y))
           );
 
         const castlingMoves = getCastlingMoves(position);
@@ -264,7 +331,7 @@ export default function Board() {
   const handleSquareClick = (position: Position) => {
     const piece = board[position.y][position.x];
 
-    if (!selectedPosition && piece?.color === "white") {
+    if (!selectedPosition && piece?.color === currentPlayer) {
       setSelectedPosition(position);
       setPossibleMoves(calculatePossibleMoves(position));
       return;
@@ -320,6 +387,27 @@ export default function Board() {
           }
 
           setBoard(newBoard);
+
+          // Check if this move puts the opponent's king in check
+          const opponentColor =
+            movingPiece.color === "white" ? "black" : "white";
+          const opponentKingPos = findKing(opponentColor);
+
+          if (opponentKingPos) {
+            // Use newBoard to check if the opponent's king is under attack
+            const isCheck = isSquareUnderAttack(
+              opponentKingPos,
+              opponentColor,
+              newBoard
+            );
+            if (isCheck) {
+              setKingInCheck(opponentKingPos);
+            } else {
+              setKingInCheck(null);
+            }
+          }
+
+          setCurrentPlayer(currentPlayer === "white" ? "black" : "white");
         }
       }
 
@@ -367,6 +455,7 @@ export default function Board() {
                 position={pos}
                 isSelected={isSelected}
                 isPossibleMove={isPossibleMove}
+                isInCheck={kingInCheck?.x === x && kingInCheck?.y === y}
                 onClick={() => handleSquareClick(pos)}
               />
             );

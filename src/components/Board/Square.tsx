@@ -6,6 +6,7 @@ interface SquareProps {
   position: Position;
   isSelected?: boolean;
   isPossibleMove?: boolean;
+  isInCheck?: boolean;
   onClick?: () => void;
 }
 
@@ -15,6 +16,7 @@ export default function Square({
   position,
   isSelected,
   isPossibleMove,
+  isInCheck,
   onClick,
 }: SquareProps) {
   const getPieceLetterCode = (type: string) => {
@@ -34,6 +36,7 @@ export default function Square({
       className={`w-full aspect-square flex items-center justify-center cursor-pointer relative
         ${isLight ? "bg-[#f0d9b5]" : "bg-[#b58863]"}
         ${isSelected ? "bg-[#f7c063] bg-opacity-50" : ""}
+        ${isInCheck ? "bg-red-500 bg-opacity-50" : ""}
         hover:opacity-90 transition-colors duration-200`}
     >
       {isPossibleMove && (
