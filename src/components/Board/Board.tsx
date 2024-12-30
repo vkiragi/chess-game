@@ -16,6 +16,11 @@ export default function Board() {
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>("white");
   const [promotionSquare, setPromotionSquare] = useState<Position | null>(null);
   const [kingInCheck, setKingInCheck] = useState<Position | null>(null);
+  const [gameStatus, setGameStatus] = useState<{
+    isOver: boolean;
+    winner: PieceColor | null;
+    reason: string;
+  } | null>(null);
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -48,6 +53,7 @@ export default function Board() {
       for (let x = 0; x < 8; x++) {
         const piece = board[y][x];
         if (piece?.type === "king" && piece.color === color) {
+          console.log(`Found ${color} king at x:${x}, y:${y}`);
           return { x, y };
         }
       }
@@ -314,25 +320,7 @@ export default function Board() {
             simulatedBoard[position.y][position.x] = null;
             simulatedBoard[pos.y][pos.x] = piece;
 
-            // Check if any enemy piece can attack this position
-            for (let y = 0; y < 8; y++) {
-              for (let x = 0; x < 8; x++) {
-                const attackingPiece = simulatedBoard[y][x];
-                if (attackingPiece && attackingPiece.color !== piece.color) {
-                  const moves = calculatePossibleMoves(
-                    { x, y },
-                    true,
-                    simulatedBoard
-                  );
-                  if (
-                    moves.some((move) => move.x === pos.x && move.y === pos.y)
-                  ) {
-                    return false;
-                  }
-                }
-              }
-            }
-            return true;
+            return !isSquareUnderAttack(pos, piece.color, simulatedBoard);
           });
 
           const castlingMoves = getCastlingMoves(position);
@@ -363,6 +351,9 @@ export default function Board() {
   };
 
   const handleSquareClick = (position: Position) => {
+    // Don't allow moves if game is over
+    if (gameStatus?.isOver) return;
+
     const piece = board[position.y][position.x];
 
     if (!selectedPosition && piece?.color === currentPlayer) {
@@ -434,10 +425,30 @@ export default function Board() {
               opponentColor,
               newBoard
             );
+
             if (isCheck) {
+              console.log(`${opponentColor} king is in check`);
               setKingInCheck(opponentKingPos);
+              // Check for checkmate
+              if (!hasLegalMoves(opponentColor, newBoard)) {
+                console.log(`CHECKMATE: ${opponentColor} has no legal moves`);
+                setGameStatus({
+                  isOver: true,
+                  winner: movingPiece.color,
+                  reason: "Checkmate",
+                });
+              }
             } else {
               setKingInCheck(null);
+              // Check for stalemate
+              if (!hasLegalMoves(opponentColor, newBoard)) {
+                console.log(`STALEMATE: ${opponentColor} has no legal moves`);
+                setGameStatus({
+                  isOver: true,
+                  winner: null,
+                  reason: "Stalemate",
+                });
+              }
             }
           }
 
@@ -448,6 +459,64 @@ export default function Board() {
       setSelectedPosition(null);
       setPossibleMoves([]);
     }
+  };
+
+  const hasLegalMoves = (color: PieceColor, boardState = board): boolean => {
+    console.log(`Checking legal moves for ${color}`);
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const piece = boardState[y][x];
+        if (piece && piece.color === color) {
+          const moves = calculatePossibleMoves({ x, y }, false, boardState);
+          console.log(
+            `${piece.type} at x:${x}, y:${y} has ${moves.length} moves`
+          );
+
+          // Simulate each move to ensure it doesn't leave king in check
+          for (const move of moves) {
+            const simulatedBoard = boardState.map((row) => [...row]);
+            simulatedBoard[y][x] = null;
+            simulatedBoard[move.y][move.x] = piece;
+
+            const kingPos = piece.type === "king" ? move : findKing(color);
+            if (
+              kingPos &&
+              !isSquareUnderAttack(kingPos, color, simulatedBoard)
+            ) {
+              return true; // Found at least one legal move
+            }
+          }
+        }
+      }
+    }
+    console.log(`No legal moves found for ${color}`);
+    return false;
+  };
+
+  const renderGameStatus = () => {
+    console.log("Rendering game status:", gameStatus);
+    if (!gameStatus?.isOver) return null;
+
+    return (
+      <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div className="bg-white p-12 rounded-xl shadow-2xl text-center transform scale-110">
+          <h2 className="text-3xl font-bold mb-6 text-gray-800">Game Over</h2>
+          <p className="text-2xl text-gray-700">
+            {gameStatus.winner ? (
+              <span className="text-blue-600 font-semibold">
+                {gameStatus.winner.charAt(0).toUpperCase() +
+                  gameStatus.winner.slice(1)}
+                wins by {gameStatus.reason}!
+              </span>
+            ) : (
+              <span className="text-gray-600 font-semibold">
+                Game drawn by {gameStatus.reason}
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -519,6 +588,8 @@ export default function Board() {
           </div>
         </div>
       )}
+
+      {renderGameStatus()}
     </div>
   );
 }
