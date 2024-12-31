@@ -5,6 +5,7 @@ import Square from "./Square";
 import { initialPosition } from "@/app/lib/constants/initialPosition";
 import styles from "./styles.module.css";
 import { Position, Piece, PieceColor, PieceType } from "@/app/lib/types/piece";
+import { ComputerPlayer } from "@/app/lib/chess-engine/computerPlayer";
 
 export default function Board() {
   const [board, setBoard] = useState(initialPosition);
@@ -21,6 +22,8 @@ export default function Board() {
     reason: string;
   } | null>(null);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
+  const [computerPlayer] = useState(new ComputerPlayer("black", 3));
+  const [isComputerEnabled, setIsComputerEnabled] = useState(false);
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -350,7 +353,7 @@ export default function Board() {
     setPromotionSquare(null);
   };
 
-  const handleSquareClick = (position: Position) => {
+  const handleSquareClick = async (position: Position) => {
     // Don't allow moves if game is over
     if (gameStatus?.isOver) return;
 
@@ -469,6 +472,20 @@ export default function Board() {
       setSelectedPosition(null);
       setPossibleMoves([]);
     }
+
+    // After player's move is complete
+    if (isComputerEnabled && currentPlayer === computerPlayer.getColor()) {
+      const computerMove = computerPlayer.makeMove(
+        board,
+        calculatePossibleMoves
+      );
+      if (computerMove) {
+        setTimeout(() => {
+          handleSquareClick(computerMove.from);
+          handleSquareClick(computerMove.to);
+        }, 500);
+      }
+    }
   };
 
   const hasLegalMoves = (color: PieceColor, boardState = board): boolean => {
@@ -560,7 +577,17 @@ export default function Board() {
     return (
       <div className="absolute top-[-32px] -right-80 w-64 h-[664px] bg-gray-800/50 shadow-xl rounded-lg overflow-y-auto backdrop-blur-sm">
         <div className="sticky top-0 z-10 bg-gray-800/50 backdrop-blur-sm px-8 py-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">Move History</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">Move History</h2>
+          <button
+            onClick={() => setIsComputerEnabled(!isComputerEnabled)}
+            className={`w-full px-4 py-2 rounded transition-colors ${
+              isComputerEnabled
+                ? "bg-red-500 hover:bg-red-600"
+                : "bg-blue-500 hover:bg-blue-600"
+            } text-white`}
+          >
+            {isComputerEnabled ? "Disable Computer" : "Enable Computer"}
+          </button>
         </div>
         <div className="px-8 py-6 space-y-3">
           {Array.from({ length: Math.ceil(moveHistory.length / 2) }, (_, i) => (
