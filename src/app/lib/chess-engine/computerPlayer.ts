@@ -1,34 +1,26 @@
 import { Piece, Position, PieceColor } from "../types/piece";
-import { findBestMove } from "./moveSearch";
+import { StockfishService } from "./stockfishService";
 
 export class ComputerPlayer {
-  private depth: number;
   private readonly color: PieceColor;
+  private stockfish: StockfishService;
 
-  constructor(color: PieceColor = "black", depth: number = 3) {
+  constructor(color: PieceColor = "black") {
     this.color = color;
-    this.depth = depth;
+    this.stockfish = new StockfishService();
   }
 
   public getColor(): PieceColor {
     return this.color;
   }
 
-  makeMove(
-    board: (Piece | null)[][],
-    calculatePossibleMoves: (
-      position: Position,
-      checkingAttack: boolean,
-      boardState: (Piece | null)[][]
-    ) => Position[]
-  ): { from: Position; to: Position } | null {
-    const result = findBestMove(
-      board,
-      calculatePossibleMoves,
-      this.depth,
-      this.color === "white"
-    );
+  async makeMove(
+    board: (Piece | null)[][]
+  ): Promise<{ from: Position; to: Position } | null> {
+    return await this.stockfish.getBestMove(board, this.color);
+  }
 
-    return result.move || null;
+  destroy() {
+    this.stockfish.destroy();
   }
 }

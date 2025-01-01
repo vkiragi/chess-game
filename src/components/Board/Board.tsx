@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Square from "./Square";
 import { initialPosition } from "@/app/lib/constants/initialPosition";
 import styles from "./styles.module.css";
@@ -22,8 +22,9 @@ export default function Board() {
     reason: string;
   } | null>(null);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
-  const [computerPlayer] = useState(new ComputerPlayer("black", 3));
-  const [isComputerEnabled, setIsComputerEnabled] = useState(false);
+  const [computerPlayer] = useState(new ComputerPlayer("black"));
+  const [isComputerEnabled, setIsComputerEnabled] = useState(true);
+  const [isComputerThinking, setIsComputerThinking] = useState(false);
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -359,18 +360,22 @@ export default function Board() {
 
     const piece = board[position.y][position.x];
 
+    // If no piece is selected and clicked on own piece
     if (!selectedPosition && piece?.color === currentPlayer) {
+      console.log("Selecting piece:", piece);
       setSelectedPosition(position);
       setPossibleMoves(calculatePossibleMoves(position));
       return;
     }
 
+    // If a piece is selected
     if (selectedPosition) {
       const isValidMove = possibleMoves.some(
         (move) => move.x === position.x && move.y === position.y
       );
 
       if (isValidMove) {
+        console.log("Making move from", selectedPosition, "to", position);
         const movingPiece = board[selectedPosition.y][selectedPosition.x];
 
         if (movingPiece) {
@@ -471,20 +476,6 @@ export default function Board() {
 
       setSelectedPosition(null);
       setPossibleMoves([]);
-    }
-
-    // After player's move is complete
-    if (isComputerEnabled && currentPlayer === computerPlayer.getColor()) {
-      const computerMove = computerPlayer.makeMove(
-        board,
-        calculatePossibleMoves
-      );
-      if (computerMove) {
-        setTimeout(() => {
-          handleSquareClick(computerMove.from);
-          handleSquareClick(computerMove.to);
-        }, 500);
-      }
     }
   };
 
@@ -608,6 +599,66 @@ export default function Board() {
     );
   };
 
+  const makeComputerMove = useCallback(async () => {
+    console.log("makeComputerMove called", {
+      isComputerEnabled,
+      currentPlayer,
+      computerColor: computerPlayer.getColor(),
+      gameStatus,
+    });
+
+    if (
+      !isComputerEnabled ||
+      currentPlayer !== computerPlayer.getColor() ||
+      gameStatus?.isOver
+    ) {
+      console.log("Early return from makeComputerMove");
+      return;
+    }
+
+    setIsComputerThinking(true);
+    console.log("Getting move from Stockfish...");
+    const move = await computerPlayer.makeMove(board);
+    console.log("Received move from Stockfish:", move);
+    setIsComputerThinking(false);
+
+    if (move) {
+      const piece = board[move.from.y][move.from.x];
+      if (piece) {
+        console.log("Making move:", move);
+        await handleSquareClick(move.from);
+        await handleSquareClick(move.to);
+      }
+    }
+  }, [board, currentPlayer, computerPlayer, gameStatus, isComputerEnabled]);
+
+  useEffect(() => {
+    if (
+      currentPlayer === computerPlayer.getColor() &&
+      isComputerEnabled &&
+      !gameStatus?.isOver
+    ) {
+      makeComputerMove();
+    }
+  }, [
+    currentPlayer,
+    isComputerEnabled,
+    computerPlayer,
+    gameStatus,
+    makeComputerMove,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      computerPlayer.destroy();
+    };
+  }, [computerPlayer]);
+
+  useEffect(() => {
+    // Start with computer enabled
+    setIsComputerEnabled(true);
+  }, []);
+
   return (
     <div className="relative">
       {/* Rank coordinates (1-8) - Left */}
@@ -674,6 +725,14 @@ export default function Board() {
                 />
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {isComputerThinking && (
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
+          <div className="bg-white p-6 rounded-lg shadow-xl">
+            <p className="text-lg font-semibold">Computer is thinking...</p>
           </div>
         </div>
       )}
