@@ -1,14 +1,31 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Square from "./Square";
-import { initialPosition } from "@/app/lib/constants/initialPosition";
+import SquareComponent from "./Square";
 import styles from "./styles.module.css";
 import { Position, Piece, PieceColor, PieceType } from "@/app/lib/types/piece";
 import { ComputerPlayer } from "@/app/lib/chess-engine/computerPlayer";
+import { Chess, type Square as ChessSquare } from "chess.js";
+import CapturedPieces from "./CapturedPieces";
+
+const chessPieceToType = (piece: string): PieceType => {
+  const mapping: Record<string, PieceType> = {
+    p: "pawn",
+    n: "knight",
+    b: "bishop",
+    r: "rook",
+    q: "queen",
+    k: "king",
+  };
+  return mapping[piece];
+};
 
 export default function Board() {
-  const [board, setBoard] = useState(initialPosition);
+  const [board, setBoard] = useState<(Piece | null)[][]>(
+    Array(8)
+      .fill(null)
+      .map(() => Array(8).fill(null))
+  );
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(
     null
   );
@@ -25,6 +42,18 @@ export default function Board() {
   const [computerPlayer] = useState(new ComputerPlayer("black"));
   const [isComputerEnabled, setIsComputerEnabled] = useState(true);
   const [isComputerThinking, setIsComputerThinking] = useState(false);
+  const [chess] = useState(() => {
+    const newChess = new Chess();
+    newChess.reset(); // Ensures we start with a fresh board
+    return newChess;
+  });
+  const [capturedPieces, setCapturedPieces] = useState<{
+    white: { type: PieceType; count: number }[];
+    black: { type: PieceType; count: number }[];
+  }>({
+    white: [],
+    black: [],
+  });
 
   const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"];
@@ -354,17 +383,29 @@ export default function Board() {
     setPromotionSquare(null);
   };
 
-  const handleSquareClick = async (position: Position) => {
-    // Don't allow moves if game is over
+  const handleSquareClick = (position: Position) => {
     if (gameStatus?.isOver) return;
 
     const piece = board[position.y][position.x];
+    console.log("Clicked piece:", piece, "at position:", position);
+    console.log("Current player:", currentPlayer);
 
     // If no piece is selected and clicked on own piece
-    if (!selectedPosition && piece?.color === currentPlayer) {
+    if (
+      !selectedPosition &&
+      piece?.color === (currentPlayer === "white" ? "white" : "black")
+    ) {
       console.log("Selecting piece:", piece);
       setSelectedPosition(position);
-      setPossibleMoves(calculatePossibleMoves(position));
+      const square = `${files[position.x]}${8 - position.y}` as ChessSquare;
+      const legalMoves = chess.moves({ square, verbose: true });
+      console.log("Legal moves:", legalMoves);
+
+      const possiblePositions = legalMoves.map((move) => ({
+        x: move.to.charCodeAt(0) - "a".charCodeAt(0),
+        y: 8 - parseInt(move.to[1]),
+      }));
+      setPossibleMoves(possiblePositions);
       return;
     }
 
@@ -375,102 +416,76 @@ export default function Board() {
       );
 
       if (isValidMove) {
-        console.log("Making move from", selectedPosition, "to", position);
-        const movingPiece = board[selectedPosition.y][selectedPosition.x];
+        const from = `${files[selectedPosition.x]}${
+          8 - selectedPosition.y
+        }` as ChessSquare;
+        const to = `${files[position.x]}${8 - position.y}` as ChessSquare;
 
-        if (movingPiece) {
-          const newBoard = board.map((row) => [...row]);
-          newBoard[selectedPosition.y][selectedPosition.x] = null;
-          newBoard[position.y][position.x] = {
-            ...movingPiece,
-            position: position,
-            hasMoved: true,
-          };
+        try {
+          const move = chess.move({ from, to });
+          if (move) {
+            syncBoardWithChess(); // Sync board after move
+            setMoveHistory((prev) => [...prev, move.san]);
+            setCurrentPlayer(currentPlayer === "white" ? "black" : "white");
 
-          // Handle castling move
-          if (movingPiece.type === "king") {
-            const isCastling = Math.abs(position.x - selectedPosition.x) === 2;
-            if (isCastling) {
-              // Kingside castling
-              if (position.x === 6) {
-                const rook = newBoard[position.y][7];
-                newBoard[position.y][7] = null;
-                newBoard[position.y][5] = {
-                  ...rook!,
-                  position: { x: 5, y: position.y },
-                  hasMoved: true,
-                };
-              }
-              // Queenside castling
-              else if (position.x === 2) {
-                const rook = newBoard[position.y][0];
-                newBoard[position.y][0] = null;
-                newBoard[position.y][3] = {
-                  ...rook!,
-                  position: { x: 3, y: position.y },
-                  hasMoved: true,
-                };
-              }
+            // Update game status
+            if (chess.isGameOver()) {
+              setGameStatus({
+                isOver: true,
+                winner: chess.isCheckmate() ? currentPlayer : null,
+                reason: chess.isCheckmate()
+                  ? "Checkmate"
+                  : chess.isStalemate()
+                  ? "Stalemate"
+                  : "Draw",
+              });
             }
-          }
 
-          // Check for pawn promotion
-          if (movingPiece.type === "pawn" && position.y === 0) {
-            setPromotionSquare(position);
-          }
-
-          setBoard(newBoard);
-
-          // Check if this move puts the opponent's king in check
-          const opponentColor =
-            movingPiece.color === "white" ? "black" : "white";
-          const opponentKingPos = findKing(opponentColor);
-
-          if (opponentKingPos) {
-            // Use newBoard to check if the opponent's king is under attack
-            const isCheck = isSquareUnderAttack(
-              opponentKingPos,
-              opponentColor,
-              newBoard
-            );
-
-            if (isCheck) {
-              console.log(`${opponentColor} king is in check`);
-              setKingInCheck(opponentKingPos);
-              // Check for checkmate
-              if (!hasLegalMoves(opponentColor, newBoard)) {
-                console.log(`CHECKMATE: ${opponentColor} has no legal moves`);
-                setGameStatus({
-                  isOver: true,
-                  winner: movingPiece.color,
-                  reason: "Checkmate",
-                });
-              }
+            // Update check status
+            if (chess.isCheck()) {
+              const kingColor = currentPlayer === "white" ? "black" : "white";
+              setKingInCheck(findKing(kingColor));
             } else {
               setKingInCheck(null);
-              // Check for stalemate
-              if (!hasLegalMoves(opponentColor, newBoard)) {
-                console.log(`STALEMATE: ${opponentColor} has no legal moves`);
-                setGameStatus({
-                  isOver: true,
-                  winner: null,
-                  reason: "Stalemate",
-                });
-              }
+            }
+
+            // Handle captured pieces
+            if (move.captured) {
+              const capturedColor =
+                currentPlayer === "white" ? "black" : "white";
+              setCapturedPieces((prev) => {
+                const pieces = prev[capturedColor];
+                if (typeof move.captured === "string") {
+                  const capturedType = chessPieceToType(move.captured);
+                  const existingPiece = pieces.find(
+                    (p) => p.type === capturedType
+                  );
+
+                  if (existingPiece) {
+                    return {
+                      ...prev,
+                      [capturedColor]: pieces.map((p) =>
+                        p.type === capturedType
+                          ? { ...p, count: p.count + 1 }
+                          : p
+                      ),
+                    };
+                  } else {
+                    return {
+                      ...prev,
+                      [capturedColor]: [
+                        ...pieces,
+                        { type: capturedType, count: 1 },
+                      ],
+                    };
+                  }
+                }
+                return prev;
+              });
             }
           }
-
-          setCurrentPlayer(currentPlayer === "white" ? "black" : "white");
-
-          const isCapture = board[position.y][position.x] !== null;
-          const moveNotation = toAlgebraicNotation(
-            selectedPosition,
-            position,
-            movingPiece,
-            isCapture,
-            board
-          );
-          setMoveHistory((prev) => [...prev, moveNotation]);
+        } catch (error) {
+          console.error("Invalid move:", error);
         }
       }
 
@@ -599,38 +614,96 @@ export default function Board() {
     );
   };
 
-  const makeComputerMove = useCallback(async () => {
-    console.log("makeComputerMove called", {
-      isComputerEnabled,
-      currentPlayer,
-      computerColor: computerPlayer.getColor(),
-      gameStatus,
-    });
-
+  const makeComputerMove = useCallback(() => {
     if (
       !isComputerEnabled ||
       currentPlayer !== computerPlayer.getColor() ||
       gameStatus?.isOver
     ) {
-      console.log("Early return from makeComputerMove");
       return;
     }
 
     setIsComputerThinking(true);
-    console.log("Getting move from Stockfish...");
-    const move = await computerPlayer.makeMove(board);
-    console.log("Received move from Stockfish:", move);
+    const move = computerPlayer.makeMove(chess);
     setIsComputerThinking(false);
 
     if (move) {
-      const piece = board[move.from.y][move.from.x];
-      if (piece) {
-        console.log("Making move:", move);
-        await handleSquareClick(move.from);
-        await handleSquareClick(move.to);
+      // Make the move directly without using handleSquareClick
+      const from = `${files[move.from.x]}${8 - move.from.y}` as ChessSquare;
+      const to = `${files[move.to.x]}${8 - move.to.y}` as ChessSquare;
+
+      try {
+        const chessMove = chess.move({ from, to });
+        if (chessMove) {
+          syncBoardWithChess();
+          setMoveHistory((prev) => [...prev, chessMove.san]);
+          setCurrentPlayer("white");
+
+          // Update game status
+          if (chess.isGameOver()) {
+            setGameStatus({
+              isOver: true,
+              winner: chess.isCheckmate() ? "black" : null,
+              reason: chess.isCheckmate()
+                ? "Checkmate"
+                : chess.isStalemate()
+                ? "Stalemate"
+                : "Draw",
+            });
+          }
+
+          // Update check status
+          if (chess.isCheck()) {
+            setKingInCheck(findKing("white"));
+          } else {
+            setKingInCheck(null);
+          }
+
+          // Handle captured pieces
+          if (
+            chessMove &&
+            chessMove.captured &&
+            typeof chessMove.captured === "string"
+          ) {
+            const capturedColor = "white"; // Since computer is black
+            setCapturedPieces((prev) => {
+              const pieces = prev[capturedColor];
+              const capturedType = chessPieceToType(
+                chessMove.captured as string
+              );
+              const existingPiece = pieces.find((p) => p.type === capturedType);
+
+              if (existingPiece) {
+                return {
+                  ...prev,
+                  [capturedColor]: pieces.map((p) =>
+                    p.type === capturedType ? { ...p, count: p.count + 1 } : p
+                  ),
+                };
+              } else {
+                return {
+                  ...prev,
+                  [capturedColor]: [
+                    ...pieces,
+                    { type: capturedType, count: 1 },
+                  ],
+                };
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Invalid move:", error);
       }
     }
-  }, [board, currentPlayer, computerPlayer, gameStatus, isComputerEnabled]);
+  }, [
+    chess,
+    currentPlayer,
+    computerPlayer,
+    gameStatus,
+    isComputerEnabled,
+    files,
+  ]);
 
   useEffect(() => {
     if (
@@ -649,95 +722,130 @@ export default function Board() {
   ]);
 
   useEffect(() => {
-    return () => {
-      computerPlayer.destroy();
-    };
-  }, [computerPlayer]);
-
-  useEffect(() => {
     // Start with computer enabled
     setIsComputerEnabled(true);
   }, []);
 
+  // Add this function to sync board state
+  const syncBoardWithChess = useCallback(() => {
+    console.log("Syncing board with chess.js");
+    const newBoard = Array(8)
+      .fill(null)
+      .map(() => Array(8).fill(null));
+    const chessBoard = chess.board();
+    chessBoard.forEach((row, y) => {
+      row.forEach((piece, x) => {
+        if (piece) {
+          newBoard[y][x] = {
+            type: piece.type as PieceType,
+            color: piece.color === "w" ? "white" : "black",
+            hasMoved: true,
+          };
+        }
+      });
+    });
+    setBoard(newBoard);
+  }, [chess]);
+
+  // Call it after initialization and after each move
+  useEffect(() => {
+    syncBoardWithChess();
+  }, [syncBoardWithChess]);
+
   return (
-    <div className="relative">
-      {/* Rank coordinates (1-8) - Left */}
-      <div className="absolute -left-6 top-0 bottom-0 flex flex-col justify-around py-1">
-        {ranks.map((rank) => (
-          <div key={rank} className="h-8 flex items-center text-sm">
-            {rank}
-          </div>
-        ))}
+    <div className="relative flex items-start gap-8">
+      {/* Captured pieces - Black */}
+      <div className="absolute -left-48 top-0">
+        <CapturedPieces pieces={capturedPieces.black} color="black" />
       </div>
 
-      {/* File coordinates (A-H) - Bottom */}
-      <div className="absolute -bottom-6 left-0 right-0 flex justify-around px-[30px]">
-        {files.map((file) => (
-          <div key={file} className="w-8 text-center text-sm">
-            {file.toUpperCase()}
-          </div>
-        ))}
-      </div>
+      {/* Main board */}
+      <div className="relative">
+        {/* Rank coordinates (1-8) - Left */}
+        <div className="absolute -left-6 top-0 bottom-0 flex flex-col justify-around py-1">
+          {ranks.map((rank) => (
+            <div key={rank} className="h-8 flex items-center text-sm">
+              {rank}
+            </div>
+          ))}
+        </div>
 
-      {/* Chess Board */}
-      <div className="w-[600px] h-[600px] grid grid-cols-8 border border-gray-300">
-        {board.map((row, y) =>
-          row.map((piece, x) => {
-            const pos = { x, y };
-            const isSelected =
-              selectedPosition?.x === x && selectedPosition?.y === y;
-            const isPossibleMove = possibleMoves.some(
-              (move) => move.x === x && move.y === y
-            );
+        {/* File coordinates (A-H) - Bottom */}
+        <div className="absolute -bottom-6 left-0 right-0 flex justify-around px-[30px]">
+          {files.map((file) => (
+            <div key={file} className="w-8 text-center text-sm">
+              {file.toUpperCase()}
+            </div>
+          ))}
+        </div>
 
-            return (
-              <Square
-                key={`${x}-${y}`}
-                isLight={(x + y) % 2 === 0}
-                piece={piece}
-                position={pos}
-                isSelected={isSelected}
-                isPossibleMove={isPossibleMove}
-                isInCheck={kingInCheck?.x === x && kingInCheck?.y === y}
-                onClick={() => handleSquareClick(pos)}
-              />
-            );
-          })
-        )}
-      </div>
+        {/* Chess Board */}
+        <div className="w-[600px] h-[600px] grid grid-cols-8 border border-gray-300">
+          {board.map((row, y) =>
+            row.map((piece, x) => {
+              const pos = { x, y };
+              const isSelected =
+                selectedPosition?.x === x && selectedPosition?.y === y;
+              const isPossibleMove = possibleMoves.some(
+                (move) => move.x === x && move.y === y
+              );
 
-      {/* Promotion Modal */}
-      {promotionSquare && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-          <div className="bg-white p-4 rounded-lg shadow-lg flex gap-4">
-            {["queen", "rook", "bishop", "knight"].map((type) => (
-              <button
-                key={type}
-                onClick={() => handlePromotion(type as PieceType)}
-                className="w-16 h-16 flex items-center justify-center hover:bg-gray-100 rounded"
-              >
-                <img
-                  src={`/pieces/w${
-                    type === "knight" ? "N" : type.charAt(0).toUpperCase()
-                  }.svg`}
-                  alt={type}
-                  className="w-12 h-12"
+              return (
+                <SquareComponent
+                  key={`${x}-${y}`}
+                  isLight={(x + y) % 2 === 0}
+                  piece={piece}
+                  position={pos}
+                  isSelected={isSelected}
+                  isPossibleMove={isPossibleMove}
+                  isInCheck={kingInCheck?.x === x && kingInCheck?.y === y}
+                  onClick={() => handleSquareClick(pos)}
                 />
-              </button>
-            ))}
-          </div>
+              );
+            })
+          )}
         </div>
-      )}
 
-      {isComputerThinking && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
-          <div className="bg-white p-6 rounded-lg shadow-xl">
-            <p className="text-lg font-semibold">Computer is thinking...</p>
+        {/* Promotion Modal */}
+        {promotionSquare && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <div className="bg-white p-4 rounded-lg shadow-lg flex gap-4">
+              {["queen", "rook", "bishop", "knight"].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => handlePromotion(type as PieceType)}
+                  className="w-16 h-16 flex items-center justify-center hover:bg-gray-100 rounded"
+                >
+                  <img
+                    src={`/pieces/w${
+                      type === "knight" ? "N" : type.charAt(0).toUpperCase()
+                    }.svg`}
+                    alt={type}
+                    className="w-12 h-12"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {renderGameStatus()}
+        {isComputerThinking && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
+            <div className="bg-white p-6 rounded-lg shadow-xl">
+              <p className="text-lg font-semibold">Computer is thinking...</p>
+            </div>
+          </div>
+        )}
+
+        {renderGameStatus()}
+
+        {renderMoveHistory()}
+      </div>
+
+      {/* Move the white captured pieces to bottom left */}
+      <div className="absolute -left-48 bottom-0">
+        <CapturedPieces pieces={capturedPieces.white} color="white" />
+      </div>
 
       {renderMoveHistory()}
     </div>
